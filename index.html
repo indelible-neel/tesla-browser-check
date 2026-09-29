@@ -28,11 +28,11 @@
 <body>
 <main>
   <h1>Tesla browser check</h1>
-  <p>Tap the buttons in order: once parked, then again while driving. Results (and the 6-second test recording) are sent automatically.</p>
+  <p>Tap the buttons in order: once parked, then again while driving. Results and recordings (tap Start, talk, tap Stop; up to 5 minutes) are sent automatically.</p>
 
   <div class="row">
     <button class="primary" id="b-mic">1. Allow microphone</button>
-    <button id="b-rec" disabled>2. Record 6 seconds</button>
+    <button id="b-rec" disabled>2. Start recording</button>
     <button id="b-play" disabled>3. Play recording</button>
     <button id="b-tone">4. Play test tone</button>
     <button id="b-rtc">5. Test WebRTC</button>
@@ -121,15 +121,29 @@
       log('getUserMedia error: ' + e.name + ': ' + e.message);
     }
   };
-  document.getElementById('b-rec').onclick = function () {
+  let activeRec = null, recTimer = null, recStart = 0;
+  const recBtn = document.getElementById('b-rec');
+  recBtn.onclick = function () {
     if (!stream) return;
+    if (activeRec) { activeRec.stop(); return; }
     chunks = [];
     let mr;
     try { mr = new MediaRecorder(stream); } catch (e) { set('recres', 'Recording', 'FAILED: ' + e.name, 'bad'); return; }
     mr.ondataavailable = e => chunks.push(e.data);
-    mr.onstop = () => { const blob = new Blob(chunks, { type: mr.mimeType }); recUrl = URL.createObjectURL(blob); uploadRecording(blob, mr.mimeType); set('recres', 'Recording', 'done (' + mr.mimeType + '), tap Play', 'ok'); document.getElementById('b-play').disabled = false; };
-    mr.start(); set('recres', 'Recording', 'recording... talk now', 'warn');
-    setTimeout(() => mr.stop(), 6000);
+    mr.onstop = () => {
+      clearInterval(recTimer); activeRec = null; recBtn.textContent = '2. Start recording'; recBtn.classList.remove('primary');
+      const secs = Math.round((Date.now() - recStart) / 1000);
+      const blob = new Blob(chunks, { type: mr.mimeType }); recUrl = URL.createObjectURL(blob); uploadRecording(blob, mr.mimeType);
+      set('recres', 'Recording', 'done, ' + secs + ' s (' + mr.mimeType + '), tap Play', 'ok'); document.getElementById('b-play').disabled = false;
+    };
+    mr.start(1000); activeRec = mr; recStart = Date.now();
+    recBtn.textContent = '2. Stop recording (0 s)'; recBtn.classList.add('primary');
+    set('recres', 'Recording', 'recording... talk now, tap Stop when done', 'warn');
+    recTimer = setInterval(() => {
+      const s = Math.round((Date.now() - recStart) / 1000);
+      recBtn.textContent = '2. Stop recording (' + s + ' s)';
+      if (s >= 300) activeRec && activeRec.stop();  // 5 minute cap
+    }, 500);
   };
   document.getElementById('b-play').onclick = function () { if (recUrl) { const a = new Audio(recUrl); a.play().then(() => set('playres', 'Playback', 'playing (listen for your voice)', 'ok')).catch(e => set('playres', 'Playback', 'FAILED: ' + e.name, 'bad')); } };
   document.getElementById('b-tone').onclick = function () {

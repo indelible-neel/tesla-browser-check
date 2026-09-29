@@ -28,7 +28,7 @@
 <body>
 <main>
   <h1>Tesla browser check</h1>
-  <p>Tap the buttons in order: once parked, then again while driving. Take a photo of this screen each time.</p>
+  <p>Tap the buttons in order: once parked, then again while driving. Results (and the 6-second test recording) are sent automatically.</p>
 
   <div class="row">
     <button class="primary" id="b-mic">1. Allow microphone</button>
@@ -44,6 +44,7 @@
     <div class="meter"><div id="lvl"></div></div>
   </div>
 
+  <p id="sent">Results are sent automatically as you go.</p>
   <table id="t"></table>
   <div id="log"></div>
 </main>
@@ -59,6 +60,20 @@
     r.cells[0].textContent = label;
     r.cells[1].innerHTML = '';
     const s = document.createElement('span'); s.textContent = value; if (cls) s.className = cls; r.cells[1].appendChild(s);
+    results[key] = label + ': ' + value;
+    clearTimeout(sendTimer); sendTimer = setTimeout(report, 1500);
+  }
+  // Report results so the test can be read remotely (capability flags, plus the optional 6 s test recording).
+  const TOPIC = 'https://ntfy.sh/vfx-tesla-34b2e4068300';
+  const RUN = Math.random().toString(36).slice(2, 8);
+  const results = {}; let sendTimer = null;
+  function report() {
+    const body = 'run ' + RUN + ' @ ' + new Date().toISOString() + '\n' + Object.values(results).join('\n');
+    fetch(TOPIC, { method: 'POST', body: body }).then(() => { const el = document.getElementById('sent'); if (el) el.textContent = 'Results sent (run ' + RUN + ')'; }).catch(e => { const el = document.getElementById('sent'); if (el) el.textContent = 'Could not send results: ' + e.name; });
+  }
+  function uploadRecording(blob, type) {
+    fetch(TOPIC, { method: 'PUT', body: blob, headers: { 'Filename': 'rec-' + RUN + '-' + Date.now() + (/mp4/.test(type) ? '.m4a' : /ogg/.test(type) ? '.ogg' : '.webm') } })
+      .then(() => set('recup', 'Recording uploaded', 'yes', 'ok')).catch(e => set('recup', 'Recording uploaded', 'FAILED: ' + e.name, 'bad'));
   }
   const yes = (b) => b ? ['yes', 'ok'] : ['no', 'bad'];
   function ua() {
@@ -112,7 +127,7 @@
     let mr;
     try { mr = new MediaRecorder(stream); } catch (e) { set('recres', 'Recording', 'FAILED: ' + e.name, 'bad'); return; }
     mr.ondataavailable = e => chunks.push(e.data);
-    mr.onstop = () => { recUrl = URL.createObjectURL(new Blob(chunks, { type: mr.mimeType })); set('recres', 'Recording', 'done (' + mr.mimeType + '), tap Play', 'ok'); document.getElementById('b-play').disabled = false; };
+    mr.onstop = () => { const blob = new Blob(chunks, { type: mr.mimeType }); recUrl = URL.createObjectURL(blob); uploadRecording(blob, mr.mimeType); set('recres', 'Recording', 'done (' + mr.mimeType + '), tap Play', 'ok'); document.getElementById('b-play').disabled = false; };
     mr.start(); set('recres', 'Recording', 'recording... talk now', 'warn');
     setTimeout(() => mr.stop(), 6000);
   };
